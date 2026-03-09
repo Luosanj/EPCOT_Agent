@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --font-sans: "Manrope";
+  --font-display: "Space Grotesk";
+  --font-mono: "SFMono-Regular";
+
+  --background: 210 40% 98%;
+  --foreground: 215 28% 16%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 215 28% 16%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 215 28% 16%;
+
+  --primary: 184 70% 36%;
+  --primary-foreground: 0 0% 98%;
+
+  --secondary: 28 60% 94%;
+  --secondary-foreground: 215 24% 22%;
+
+  --muted: 210 28% 92%;
+  --muted-foreground: 215 18% 44%;
+
+  --accent: 28 88% 56%;
+  --accent-foreground: 0 0% 98%;
+
+  --destructive: 0 72% 52%;
+  --destructive-foreground: 0 0% 98%;
+
+  --border: 210 18% 86%;
+  --input: 210 20% 88%;
+  --ring: 184 70% 36%;
+
+  --radius: 14px;
+  --sidebar: 210 34% 96%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(1200px 420px at 12% -10%, rgba(14, 165, 164, 0.18), transparent 60%),
+      radial-gradient(900px 480px at 90% -20%, rgba(248, 173, 110, 0.22), transparent 55%),
+      radial-gradient(600px 600px at 80% 115%, rgba(14, 165, 164, 0.08), transparent 60%),
+      hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--font-sans);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
