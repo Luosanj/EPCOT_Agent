@@ -1,5 +1,5 @@
 import re
-from EPCOT_runner import run_epcot_prediction, get_supported_range
+from EPCOT_runner import run_epcot_prediction, get_supported_range, plot_epcot_predictions
 
 
 class LLMGenomicPlanner:
@@ -293,11 +293,18 @@ class LLMGenomicPlanner:
 
                 state["stage"] = "completed"
 
+                plot_paths = outputs.get("plots", [])
+
+                plot_text = ""
+                if plot_paths:
+                    plot_text = "\n\nGenerated plots:\n" + "\n".join(plot_paths)
+
                 return (
                     "Prediction completed successfully.\n\n"
                     f"Predicted modalities:\n{outputs['modalities']}\n\n"
-                    f"Prediction file saved at:\n{outputs['file_path']}\n\n"
-                    "You may now visualize or download results."
+                    f"Prediction file saved at:\n{outputs['file_path']}"
+                    f"{plot_text}\n\n"
+                    "You may now visualize the generated plots or download the prediction JSON file."
                 )
 
             if message.lower() in ["no", "n"]:
