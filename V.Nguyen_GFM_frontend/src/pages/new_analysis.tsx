@@ -1,182 +1,458 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/UI/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/UI/card";
-import { Upload, FileText, CheckCircle, AlertCircle, Bot } from "lucide-react";
-import { uploadBamFile } from "@/lib/api";
-import { Chatbox } from "@/components/Chatbox";
+import {
+  Bot,
+  Send,
+  Loader2,
+  Paperclip,
+  FileText,
+  X,
+  PlayCircle,
+  Dna,
+  Zap,
+  MessageSquare,
+  FlaskConical,
+} from "lucide-react";
+import { uploadBamFile, sendChatMessage } from "@/lib/api";
 import { toast } from "sonner";
+import { ResultsPanel, type JobMeta } from "@/components/ResultsPanel";
 
-export function NewAnalysis() {
-  const [file, setFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadComplete, setUploadComplete] = useState(false);
-  const [nextStepPrompt, setNextStepPrompt] = useState<string>("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const selected = e.target.files[0];
-      if (!selected.name.endsWith(".bam")) {
-        toast.error("Invalid file type. Please upload a .bam file.");
-        return;
-      }
-      setFile(selected);
-    }
-  };
+interface Message {
+  id: string;
+  role: "user" | "agent";
+  content: string;
+  isAction?: boolean;
+}
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
+type Phase = "empty" | "chatting" | "results";
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const selected = e.dataTransfer.files[0];
-      if (!selected.name.endsWith(".bam")) {
-        toast.error("Invalid file type. Please upload a .bam file.");
-        return;
-      }
-      setFile(selected);
-    }
-  };
+function createId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
-  const handleUpload = async () => {
-    if (!file) return;
+// ─── Suggestion chips (shown in empty state) ──────────────────────────────────
 
-    setIsUploading(true);
-    try {
-      const response = await uploadBamFile(file);
-      if (response?.error) {
-          toast.error(response.error);
-      } else {
-        setUploadComplete(true);
-        setNextStepPrompt(response?.next_step || "");
-        toast.success("File uploaded successfully");
-      }
-    } catch (error) {
-      toast.error("Failed to upload file");
-    } finally {
-      setIsUploading(false);
+const SUGGESTIONS = [
+  { icon: Dna, label: "Upload a BAM file to start" },
+  { icon: Zap, label: "Predict enhancer activity (EFP)" },
+  { icon: FlaskConical, label: "Analyze a genomic region" },
+  { icon: MessageSquare, label: "What does EPCOT predict?" },
+];
+
+// ─── Shared input bar component ────────────────────────────────────────────────
+
+interface InputBarProps {
+  input: string;
+  setInput: (v: string) => void;
+  pendingFile: File | null;
+  clearPendingFile: () => void;
+  onSend: () => void;
+  onAttach: () => void;
+  isLoading: boolean;
+  compact?: boolean; // true when in split-view chat column
+}
+
+function InputBar({
+  input,
+  setInput,
+  pendingFile,
+  clearPendingFile,
+  onSend,
+  onAttach,
+  isLoading,
+  compact = false,
+}: InputBarProps) {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      onSend();
     }
   };
 
   return (
-    <div className="container mx-auto p-6 max-w-5xl space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">New Analysis</h1>
-        <p className="text-muted-foreground mt-2">
-          Upload your genomic data (.bam) and let the AI assistant guide you through the analysis.
-        </p>
+    <div
+      className={`${compact ? "px-3 py-2" : "px-4 py-3"
+        } bg-card/80 backdrop-blur border border-border rounded-2xl shadow-sm space-y-2`}
+    >
+      {/* File chip */}
+      {pendingFile && (
+        <div className="flex items-center gap-2 bg-muted/60 border border-border rounded-lg px-3 py-1.5 text-xs w-fit max-w-full">
+          <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
+          <span className="font-medium truncate max-w-[200px]">{pendingFile.name}</span>
+          <span className="text-muted-foreground shrink-0">
+            ({(pendingFile.size / (1024 * 1024)).toFixed(1)} MB)
+          </span>
+          <button
+            onClick={clearPendingFile}
+            className="ml-1 text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Remove file"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+
+      <div className="flex items-end gap-2">
+        {/* Paperclip */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-primary rounded-xl"
+          onClick={onAttach}
+          aria-label="Attach .bam file"
+          title="Attach .bam file"
+        >
+          <Paperclip className="h-4 w-4" />
+        </Button>
+
+        {/* Textarea */}
+        <textarea
+          id="chat-message-input"
+          rows={1}
+          placeholder={
+            pendingFile
+              ? "Add a message or just send the file…"
+              : "Ask anything about your genomic data…"
+          }
+          className="flex-1 resize-none bg-transparent text-sm placeholder:text-muted-foreground focus-visible:outline-none leading-relaxed py-1 max-h-40 overflow-y-auto"
+          value={input}
+          onChange={(e) => {
+            setInput(e.target.value);
+            // auto-grow
+            e.target.style.height = "auto";
+            e.target.style.height = `${e.target.scrollHeight}px`;
+          }}
+          onKeyDown={handleKeyDown}
+          disabled={isLoading}
+        />
+
+        {/* Send */}
+        <Button
+          size="icon"
+          className="h-8 w-8 shrink-0 rounded-xl"
+          onClick={onSend}
+          disabled={(!input.trim() && !pendingFile) || isLoading}
+          aria-label="Send message"
+        >
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Send className="h-4 w-4" />
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Message bubble ────────────────────────────────────────────────────────────
+
+function MessageBubble({ msg }: { msg: Message }) {
+  const isUser = msg.role === "user";
+  return (
+    <div className={`flex items-start gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
+      <div
+        className={`h-7 w-7 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold ${isUser ? "bg-primary text-primary-foreground" : "bg-muted"
+          }`}
+      >
+        {isUser ? "U" : <Bot className="h-3.5 w-3.5 text-muted-foreground" />}
+      </div>
+      <div
+        className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap shadow-sm ${isUser
+          ? "bg-primary text-primary-foreground rounded-tr-sm"
+          : msg.isAction
+            ? "bg-primary/8 text-foreground border border-primary/20 rounded-tl-sm"
+            : "bg-muted text-foreground rounded-tl-sm"
+          }`}
+      >
+        {msg.content}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ────────────────────────────────────────────────────────────
+
+export function NewAnalysis() {
+  const [phase, setPhase] = useState<Phase>("empty");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [jobMeta, setJobMeta] = useState<JobMeta | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
+
+  const addMessage = (role: Message["role"], content: string, isAction?: boolean) => {
+    setMessages((prev) => [...prev, { id: createId(), role, content, isAction }]);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) {
+      const f = e.target.files[0];
+      if (!f.name.endsWith(".bam")) {
+        toast.error("Invalid file type. Please upload a .bam file.");
+        return;
+      }
+      setPendingFile(f);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() && !pendingFile) return;
+
+    // Switch to "chatting" on first send
+    if (phase === "empty") setPhase("chatting");
+
+    if (pendingFile) {
+      const file = pendingFile;
+      setPendingFile(null);
+      const userContent = input.trim()
+        ? `[Attached: ${file.name}]  ${input.trim()}`
+        : `[Attached: ${file.name}]`;
+      addMessage("user", userContent);
+      setInput("");
+      setIsLoading(true);
+      try {
+        await uploadBamFile(file);
+        setUploadedFile(file);
+        addMessage(
+          "agent",
+          `✅ ${file.name} uploaded and validated.\n\nPlease provide the genomic region you'd like to analyze — for example:\n\`chr17, 41196312, 41209800\`\n\nThen tell me which modality: EFP, GEP, or EAP.`,
+        );
+      } catch {
+        addMessage("agent", "❌ Upload failed. Please try again.");
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    const userText = input.trim();
+    addMessage("user", userText);
+    setInput("");
+    setIsLoading(true);
+    try {
+      const response = await sendChatMessage(userText);
+      addMessage("agent", response?.reply ?? "I encountered an error returning a response.");
+    } catch {
+      addMessage("agent", "Sorry, I'm having trouble connecting to the backend.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRunPrediction = () => {
+    if (!uploadedFile) return;
+    addMessage("agent", "🔬 Running EPCOT prediction… Results will appear shortly.", true);
+    const meta: JobMeta = {
+      filename: uploadedFile.name,
+      region: "chr17:41,196,312–41,209,800",
+      modality: "EFP",
+      timestamp: new Date(),
+    };
+    setTimeout(() => {
+      setJobMeta(meta);
+      setPhase("results");
+      addMessage("agent", "✅ Prediction complete! The results panel is now open on the right.");
+    }, 1200);
+  };
+
+  const handleCloseResults = () => {
+    setPhase("chatting");
+    setJobMeta(null);
+  };
+
+  const handleSuggestion = (label: string) => {
+    setInput(label);
+  };
+
+  // ── Shared hidden file input ──────────────────────────────────────────────
+  const fileInputEl = (
+    <input
+      ref={fileInputRef}
+      type="file"
+      accept=".bam"
+      className="hidden"
+      onChange={handleFileSelect}
+      aria-label="Upload BAM file"
+      id="bam-file-input"
+    />
+  );
+
+  // ── PHASE: empty ─────────────────────────────────────────────────────────
+  if (phase === "empty") {
+    return (
+      <div className="flex flex-col items-center justify-center h-full px-4">
+        {fileInputEl}
+
+        {/* Heading */}
+        <div className="mb-8 text-center space-y-2">
+          <div className="flex items-center justify-center gap-2 mb-3">
+            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+              <Dna className="h-5 w-5 text-primary" />
+            </div>
+          </div>
+          <h1 className="text-3xl font-semibold tracking-tight">
+            What would you like to analyze?
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            Upload a <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">.bam</code> file or ask me anything about genomic predictions.
+          </p>
+        </div>
+
+        {/* Input box */}
+        <div className="w-full max-w-2xl">
+          <InputBar
+            input={input}
+            setInput={setInput}
+            pendingFile={pendingFile}
+            clearPendingFile={() => setPendingFile(null)}
+            onSend={handleSend}
+            onAttach={() => fileInputRef.current?.click()}
+            isLoading={isLoading}
+          />
+        </div>
+
+        {/* Suggestion chips */}
+        <div className="mt-5 flex flex-wrap gap-2 justify-center max-w-2xl">
+          {SUGGESTIONS.map(({ icon: Icon, label }) => (
+            <button
+              key={label}
+              onClick={() => handleSuggestion(label)}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-border bg-card/80 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Icon className="h-3 w-3" />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── PHASE: chatting (full-screen) ─────────────────────────────────────────
+  if (phase === "chatting") {
+    return (
+      <div className="flex flex-col h-full overflow-hidden">
+        {fileInputEl}
+
+        {/* Run prediction pill — floats at top when file is ready */}
+        {uploadedFile && (
+          <div className="shrink-0 flex justify-center pt-3">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 text-xs rounded-full shadow-sm"
+              onClick={handleRunPrediction}
+              disabled={isLoading}
+            >
+              <PlayCircle className="h-3.5 w-3.5 text-primary" />
+              Run Prediction — {uploadedFile.name}
+            </Button>
+          </div>
+        )}
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto py-6">
+          <div className="max-w-2xl mx-auto px-4 space-y-5">
+            {messages.map((msg) => (
+              <MessageBubble key={msg.id} msg={msg} />
+            ))}
+            {isLoading && (
+              <div className="flex items-start gap-3">
+                <div className="h-7 w-7 shrink-0 rounded-full bg-muted flex items-center justify-center">
+                  <Bot className="h-3.5 w-3.5 text-muted-foreground" />
+                </div>
+                <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-2.5 flex items-center gap-2 text-sm text-muted-foreground shadow-sm">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Thinking…
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+        </div>
+
+        {/* Pinned input */}
+        <div className="shrink-0 pb-5 px-4">
+          <div className="max-w-2xl mx-auto">
+            <InputBar
+              input={input}
+              setInput={setInput}
+              pendingFile={pendingFile}
+              clearPendingFile={() => setPendingFile(null)}
+              onSend={handleSend}
+              onAttach={() => fileInputRef.current?.click()}
+              isLoading={isLoading}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── PHASE: results (40 / 60 split) ────────────────────────────────────────
+  return (
+    <div className="flex h-full overflow-hidden">
+      {fileInputEl}
+
+      {/* Chat column — 40% */}
+      <div className="w-[40%] flex flex-col h-full border-r border-border">
+        {/* Header */}
+        <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-border bg-card/80 backdrop-blur">
+          <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center">
+            <Bot className="h-3.5 w-3.5 text-primary" />
+          </div>
+          <span className="text-sm font-medium">EPCOT Assistant</span>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {messages.map((msg) => (
+            <MessageBubble key={msg.id} msg={msg} />
+          ))}
+          {isLoading && (
+            <div className="flex items-start gap-3">
+              <div className="h-7 w-7 shrink-0 rounded-full bg-muted flex items-center justify-center">
+                <Bot className="h-3.5 w-3.5 text-muted-foreground" />
+              </div>
+              <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-2.5 flex items-center gap-2 text-sm text-muted-foreground shadow-sm">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Thinking…
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Pinned input */}
+        <div className="shrink-0 p-3">
+          <InputBar
+            input={input}
+            setInput={setInput}
+            pendingFile={pendingFile}
+            clearPendingFile={() => setPendingFile(null)}
+            onSend={handleSend}
+            onAttach={() => fileInputRef.current?.click()}
+            isLoading={isLoading}
+            compact
+          />
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Left Column - Workflow */}
-        <div className="space-y-6">
-          <Card>
-             <CardHeader>
-               <CardTitle className="text-xl flex items-center gap-2">
-                 <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-sm font-bold">1</span>
-                 Data Upload
-               </CardTitle>
-               <CardDescription>Upload your sorted BAM file for processing.</CardDescription>
-             </CardHeader>
-             <CardContent>
-                {!uploadComplete ? (
-                    <div className="space-y-4">
-                        <div 
-                            className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer ${file ? 'border-primary/50 bg-primary/5' : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'}`}
-                            onDragOver={handleDragOver}
-                            onDrop={handleDrop}
-                            onClick={() => fileInputRef.current?.click()}
-                        >
-                            <input 
-                                type="file" 
-                                className="hidden" 
-                                ref={fileInputRef} 
-                                accept=".bam"
-                                onChange={handleFileSelect}
-                            />
-                            
-                            {!file ? (
-                                <div className="flex flex-col items-center gap-3">
-                                    <div className="p-3 bg-muted rounded-full">
-                                        <Upload className="w-6 h-6 text-muted-foreground" />
-                                    </div>
-                                    <div>
-                                        <p className="font-medium">Click or drag and drop</p>
-                                        <p className="text-sm text-muted-foreground">Supported formats: .bam (Max 5GB)</p>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="flex flex-col items-center gap-3">
-                                    <div className="p-3 bg-primary/10 rounded-full">
-                                        <FileText className="w-6 h-6 text-primary" />
-                                    </div>
-                                    <div>
-                                        <p className="font-medium text-primary">{file.name}</p>
-                                        <p className="text-sm text-muted-foreground">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        <Button 
-                            className="w-full" 
-                            disabled={!file || isUploading} 
-                            onClick={handleUpload}
-                        >
-                            {isUploading ? "Uploading..." : "Upload File"}
-                        </Button>
-                    </div>
-                ) : (
-                    <div className="p-6 rounded-xl bg-green-500/10 border border-green-500/20 flex flex-col items-center text-center space-y-3">
-                        <CheckCircle className="w-8 h-8 text-green-500 mb-2" />
-                        <h3 className="font-medium text-green-600 dark:text-green-400">Upload Complete</h3>
-                        <p className="text-sm text-green-600/80 dark:text-green-400/80">
-                            {file?.name} has been successfully validated and stored.
-                        </p>
-                        <Button variant="outline" size="sm" onClick={() => {
-                            setFile(null);
-                            setUploadComplete(false);
-                            setNextStepPrompt("");
-                        }}>Upload another file</Button>
-                    </div>
-                )}
-             </CardContent>
-          </Card>
-
-          <Card className={!uploadComplete ? "opacity-50 pointer-events-none transition-opacity" : "transition-opacity"}>
-             <CardHeader>
-               <CardTitle className="text-xl flex items-center gap-2">
-                 <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-sm font-bold">2</span>
-                 Analysis Options
-               </CardTitle>
-               <CardDescription>Configure your requested analysis via the chat assistant.</CardDescription>
-             </CardHeader>
-             <CardContent>
-                 <div className="space-y-4 text-sm text-muted-foreground">
-                    <div className="flex items-start gap-2">
-                        <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                        <p>The AI planner will automatically guide you through selecting regions and predicting modalities (EFP, GEP, EAP).</p>
-                    </div>
-                 </div>
-             </CardContent>
-          </Card>
-        </div>
-
-        {/* Right Column - Chat Assistant */}
-        <div className="relative">
-            {!uploadComplete && (
-                <div className="absolute inset-0 z-10 bg-background/80 backdrop-blur-sm rounded-xl border flex flex-col items-center justify-center p-6 text-center">
-                    <Bot className="w-12 h-12 text-muted-foreground mb-4 opacity-50" />
-                    <h3 className="font-semibold text-lg mb-2">Assistant Standby</h3>
-                    <p className="text-sm text-muted-foreground max-w-[250px]">
-                        Please upload your genomic data file first to activate the interactive planner.
-                    </p>
-                </div>
-            )}
-            <Chatbox initialMessage={nextStepPrompt} />
-        </div>
+      {/* Results column — 60% */}
+      <div className="w-[60%] h-full">
+        {jobMeta && <ResultsPanel jobMeta={jobMeta} onClose={handleCloseResults} />}
       </div>
     </div>
   );

@@ -5,7 +5,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { MainLayout } from "./components/layout/MainLayout";
-import { Dashboard } from "./pages/dashboard";
 import { NewAnalysis } from "./pages/new_analysis";
 
 
@@ -20,7 +19,7 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route element={<MainLayout />}>
-              <Route index element={<Dashboard />} />
+              <Route index element={<NewAnalysis />} />
               <Route path="analysis" element={<NewAnalysis />} />
             </Route>
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

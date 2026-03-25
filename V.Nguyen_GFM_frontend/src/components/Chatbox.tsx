@@ -43,7 +43,7 @@ export function Chatbox({ initialMessage, onSendMessage }: ChatboxProps) {
     setIsLoading(true);
 
     if (onSendMessage) {
-        onSendMessage(userMessage.content);
+      onSendMessage(userMessage.content);
     }
 
     try {
@@ -74,7 +74,7 @@ export function Chatbox({ initialMessage, onSendMessage }: ChatboxProps) {
           GFM Assistant
         </CardTitle>
       </CardHeader>
-      
+
       <ScrollArea className="flex-1 p-4" ref={scrollRef}>
         <div className="space-y-4">
           {messages.map((msg) => (
@@ -83,18 +83,16 @@ export function Chatbox({ initialMessage, onSendMessage }: ChatboxProps) {
               className={`flex items-start gap-3 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}
             >
               <div
-                className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-md border shadow-sm ${
-                  msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
-                }`}
+                className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-md border shadow-sm ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
+                  }`}
               >
                 {msg.role === "user" ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
               </div>
               <div
-                className={`rounded-lg px-3 py-2 text-sm shadow-sm ${
-                  msg.role === "user"
+                className={`rounded-lg px-3 py-2 text-sm shadow-sm ${msg.role === "user"
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted"
-                }`}
+                  }`}
               >
                 <div className="whitespace-pre-wrap">{msg.content}</div>
               </div>
