@@ -1,7 +1,6 @@
 import { Outlet } from "react-router-dom";
 import { TopBar } from "./TopBar";
 import { Sidebar } from "./Sidebar";
-import { AIChatPanel } from "./AIChatPanel";
 
 export function MainLayout() {
   return (
@@ -12,7 +11,6 @@ export function MainLayout() {
         <main className="flex-1 overflow-auto">
           <Outlet />
         </main>
-        <AIChatPanel />
       </div>
     </div>
   );

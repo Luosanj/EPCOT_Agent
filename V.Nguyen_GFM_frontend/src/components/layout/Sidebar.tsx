@@ -3,7 +3,6 @@ import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/UI/button";
 import {
-  LayoutDashboard,
   FlaskConical,
   FileText,
   BookOpen,
@@ -14,8 +13,7 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { to: "/", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/analysis", icon: FlaskConical, label: "New Analysis" },
+  { to: "/", icon: FlaskConical, label: "New Analysis" },
   { to: "/results", icon: FileText, label: "Results" },
   { to: "/notebook", icon: BookOpen, label: "Notebook" },
   { to: "/history", icon: History, label: "Job History" },
