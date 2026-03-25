@@ -2,6 +2,8 @@ import sys
 import os
 import json
 from datetime import datetime
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 sys.path.append(
     "/nfs/turbo/umms-drjieliu/usr/luosanj/EPCOTv2_gradio/EPCOTv2/"
@@ -251,7 +253,127 @@ def run_epcot_prediction(bam_path, chromosome, start, end, modalities):
     with open(filepath, "w") as f:
         json.dump(selected_outputs, f)
 
+    # -------------------------------------------------
+    # Generate plots
+    # -------------------------------------------------
+
+    plot_paths = plot_epcot_predictions(filepath)
+
     return {
         "file_path": filepath,
-        "modalities": list(selected_outputs.keys())
+        "modalities": modalities,
+        "plots": plot_paths
     }
+
+# =====================================================
+# Plot predictions
+# =====================================================
+
+def plot_epcot_predictions(prediction_file, save_dir="prediction_plots"):
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    with open(prediction_file,"r") as f:
+        pred_data = json.load(f)
+
+    chrom = pred_data["metadata"]["chromosome"]
+    if isinstance(chrom, int):
+        chromosome = str(chrom)
+    else:
+        chromosome = chrom.replace("chr", "")
+
+    start = pred_data["metadata"]["start"]
+    end   = pred_data["metadata"]["end"]
+
+    modalities = pred_data["metadata"]["modalities"]
+
+    saved_plots = []
+
+    for mod in modalities:
+
+        if mod not in pred_data:
+            continue
+
+        data = np.array(pred_data[mod])
+
+        # =============================
+        # Contact maps
+        # =============================
+
+        if mod in ["microc","hic","intacthic"]:
+
+            if mod == "microc":
+                data = np.squeeze(data)[:,:,0]
+
+            elif mod == "hic":
+                data = np.squeeze(data)[:,:,2]
+
+            else:
+                data = np.squeeze(data)[:,1]
+
+            fig, ax = plt.subplots(figsize=(6,6))
+
+            im = ax.imshow(
+                data,
+                cmap="RdBu_r",
+                vmin=0,
+                vmax=2,
+                extent=[start,end,start,end]
+            )
+
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+
+            plt.colorbar(im,cax=cax)
+
+            ax.set_xlabel("Genomic position")
+            ax.set_ylabel("Genomic position")
+            ax.set_title(mod)
+
+        # =============================
+        # 1D tracks
+        # =============================
+
+        else:
+
+            data = np.squeeze(data)
+
+            if mod == "rna" and data.ndim == 2:
+                data = data[:,2]
+
+            if mod in ["bru","rna_strand","tt","groseq","grocap","proseq","netcage"] and data.ndim == 2:
+                data = data[:,0]
+
+            n_bins = data.shape[0]
+
+            pixel_width = (end-start)/n_bins
+
+            coords = start + pixel_width/2 + np.arange(n_bins)*pixel_width
+
+            fig, ax = plt.subplots(figsize=(8,2))
+
+            sig = np.clip(data,0,None)
+
+            ax.plot(coords,sig,lw=1.5)
+            ax.fill_between(coords,0,sig,alpha=0.3)
+
+            ax.set_xlim(coords.min(),coords.max())
+
+            ax.set_xlabel("Genomic position (bp)")
+            ax.set_ylabel("Signal")
+
+            ax.set_title(mod)
+
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+
+        plt.tight_layout()
+
+        plot_path = f"{save_dir}/{mod}_chr{chromosome}_{start}_{end}.png"
+
+        plt.savefig(plot_path,dpi=300)
+        plt.close()
+
+        saved_plots.append(plot_path)
+
+    return saved_plots
