@@ -24,6 +24,12 @@ interface Message {
   role: "user" | "agent";
   content: string;
   isAction?: boolean;
+  visualSummary?: {
+    high: number;
+    moderate: number;
+    low: number;
+    total: number;
+  };
 }
 
 type Phase = "empty" | "chatting" | "results";
@@ -159,15 +165,32 @@ function MessageBubble({ msg }: { msg: Message }) {
       >
         {isUser ? "U" : <Bot className="h-3.5 w-3.5 text-muted-foreground" />}
       </div>
-      <div
-        className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap shadow-sm ${isUser
-          ? "bg-primary text-primary-foreground rounded-tr-sm"
-          : msg.isAction
-            ? "bg-primary/8 text-foreground border border-primary/20 rounded-tl-sm"
-            : "bg-muted text-foreground rounded-tl-sm"
-          }`}
-      >
-        {msg.content}
+      <div className={`flex flex-col gap-2 max-w-[75%]`}>
+        <div
+          className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap shadow-sm ${isUser
+            ? "bg-primary text-primary-foreground rounded-tr-sm"
+            : msg.isAction
+              ? "bg-primary/8 text-foreground border border-primary/20 rounded-tl-sm"
+              : "bg-muted text-foreground rounded-tl-sm"
+            }`}
+        >
+          {msg.content}
+        </div>
+        {msg.visualSummary && (
+          <div className="bg-card/80 border border-border rounded-xl p-3 shadow-sm text-xs space-y-2 w-full animate-in fade-in slide-in-from-bottom-2">
+            <p className="font-medium text-primary">Confidence Overview</p>
+            <div className="flex rounded-full overflow-hidden h-2">
+              <div className="bg-emerald-500 transition-all" style={{ width: `${(msg.visualSummary.high / msg.visualSummary.total) * 100}%` }} title="High" />
+              <div className="bg-amber-400 transition-all" style={{ width: `${(msg.visualSummary.moderate / msg.visualSummary.total) * 100}%` }} title="Moderate" />
+              <div className="bg-muted-foreground/30 transition-all" style={{ width: `${(msg.visualSummary.low / msg.visualSummary.total) * 100}%` }} title="Low" />
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />High <strong>{msg.visualSummary.high}</strong></span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-full bg-amber-400" />Moderate <strong>{msg.visualSummary.moderate}</strong></span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/40" />Low <strong>{msg.visualSummary.low}</strong></span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -191,8 +214,8 @@ export function NewAnalysis() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
-  const addMessage = (role: Message["role"], content: string, isAction?: boolean) => {
-    setMessages((prev) => [...prev, { id: createId(), role, content, isAction }]);
+  const addMessage = (role: Message["role"], content: string, isAction?: boolean, visualSummary?: Message["visualSummary"]) => {
+    setMessages((prev) => [...prev, { id: createId(), role, content, isAction, visualSummary }]);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -263,7 +286,12 @@ export function NewAnalysis() {
     setTimeout(() => {
       setJobMeta(meta);
       setPhase("results");
-      addMessage("agent", "✅ Prediction complete! The results panel is now open on the right.");
+      addMessage("agent", "✅ Prediction complete! Found 5 loci in this region. Detailed tracking and download options are available in the Results Panel on the right.", false, {
+        high: 2,
+        moderate: 2,
+        low: 1,
+        total: 5,
+      });
     }, 1200);
   };
 

@@ -4,8 +4,6 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/UI/button";
 import {
   FlaskConical,
-  FileText,
-  BookOpen,
   History,
   Settings,
   PanelLeftClose,
@@ -14,8 +12,6 @@ import {
 
 const navItems = [
   { to: "/", icon: FlaskConical, label: "New Analysis" },
-  { to: "/results", icon: FileText, label: "Results" },
-  { to: "/notebook", icon: BookOpen, label: "Notebook" },
   { to: "/history", icon: History, label: "Job History" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];
