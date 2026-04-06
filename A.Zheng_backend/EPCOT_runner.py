@@ -4,7 +4,6 @@ import json
 from datetime import datetime
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-
 sys.path.append(
     "/nfs/turbo/umms-drjieliu/usr/luosanj/EPCOTv2_gradio/EPCOTv2/"
 )
@@ -215,17 +214,31 @@ def run_epcot_prediction(bam_path, chromosome, start, end, modalities):
     # Crop to exact user region
     # -------------------------------------------------
 
-    selected_outputs = {}
-
+    selected_outputs = {} 
+    
     for mod in modalities:
-        if mod in out_dict:
-            cropped = crop_prediction(
-                out_dict[mod],
-                window_start,
-                start,
-                end
-            )
-            selected_outputs[mod] = cropped.tolist()
+
+        if mod not in out_dict:
+            continue
+
+        pred = out_dict[mod]
+
+        start_offset = int((start - window_start) / 1000)
+        end_offset   = int(np.ceil((end - window_start) / 1000))
+
+        # 2D contact maps
+        if mod in ["microc", "hic", "intacthic"]:
+
+            cropped = pred[:, 
+                        start_offset:end_offset,
+                        start_offset:end_offset,
+                        :]
+
+        # 1D tracks
+        else:
+            cropped = pred[:, start_offset:end_offset]
+
+        selected_outputs[mod] = cropped.tolist()
 
     # -------------------------------------------------
     # Add metadata
@@ -247,7 +260,9 @@ def run_epcot_prediction(bam_path, chromosome, start, end, modalities):
     output_dir = "prediction_outputs"
     os.makedirs(output_dir, exist_ok=True)
 
-    filename = f"prediction_chr{chromosome}_{start}_{end}.json"
+    mod = modalities[0]
+
+    filename = f"{mod}_chr{chromosome}_{start}_{end}.json"
     filepath = os.path.join(output_dir, filename)
 
     with open(filepath, "w") as f:
@@ -257,12 +272,9 @@ def run_epcot_prediction(bam_path, chromosome, start, end, modalities):
     # Generate plots
     # -------------------------------------------------
 
-    plot_paths = plot_epcot_predictions(filepath)
-
     return {
-        "file_path": filepath,
-        "modalities": modalities,
-        "plots": plot_paths
+    "modality": modalities[0],
+    "file_path": filepath,
     }
 
 # =====================================================
@@ -273,18 +285,14 @@ def plot_epcot_predictions(prediction_file, save_dir="prediction_plots"):
 
     os.makedirs(save_dir, exist_ok=True)
 
-    with open(prediction_file,"r") as f:
+    with open(prediction_file, "r") as f:
         pred_data = json.load(f)
 
     chrom = pred_data["metadata"]["chromosome"]
-    if isinstance(chrom, int):
-        chromosome = str(chrom)
-    else:
-        chromosome = chrom.replace("chr", "")
+    chromosome = str(chrom).replace("chr", "")
 
     start = pred_data["metadata"]["start"]
     end   = pred_data["metadata"]["end"]
-
     modalities = pred_data["metadata"]["modalities"]
 
     saved_plots = []
@@ -297,71 +305,61 @@ def plot_epcot_predictions(prediction_file, save_dir="prediction_plots"):
         data = np.array(pred_data[mod])
 
         # =============================
-        # Contact maps
+        # 2D contact maps
         # =============================
+        if mod in ["microc", "hic", "intacthic"]:
 
-        if mod in ["microc","hic","intacthic"]:
+            data = np.squeeze(data)
 
             if mod == "microc":
-                data = np.squeeze(data)[:,:,0]
-
+                data = data[:, :, 0]
             elif mod == "hic":
-                data = np.squeeze(data)[:,:,2]
+                data = data[:, :, 2]
+            elif mod == "intacthic":
+                data = data[:, 1]
 
-            else:
-                data = np.squeeze(data)[:,1]
-
-            fig, ax = plt.subplots(figsize=(6,6))
+            fig, ax = plt.subplots(figsize=(6, 6))
 
             im = ax.imshow(
                 data,
                 cmap="RdBu_r",
                 vmin=0,
                 vmax=2,
-                extent=[start,end,start,end]
+                extent=[start, end, start, end]
             )
 
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="5%", pad=0.05)
+            plt.colorbar(im, cax=cax)
 
-            plt.colorbar(im,cax=cax)
-
-            ax.set_xlabel("Genomic position")
-            ax.set_ylabel("Genomic position")
             ax.set_title(mod)
 
         # =============================
-        # 1D tracks
+        # 1D tracks (FIXED)
         # =============================
-
         else:
 
             data = np.squeeze(data)
 
             if mod == "rna" and data.ndim == 2:
-                data = data[:,2]
+                data = data[:, 2]
 
             if mod in ["bru","rna_strand","tt","groseq","grocap","proseq","netcage"] and data.ndim == 2:
-                data = data[:,0]
+                data = data[:, 0]
 
+            # coords per modality
             n_bins = data.shape[0]
+            pixel_width = (end - start) / n_bins
+            coords = start + pixel_width/2 + np.arange(n_bins) * pixel_width
 
-            pixel_width = (end-start)/n_bins
+            fig, ax = plt.subplots(figsize=(8, 2))
 
-            coords = start + pixel_width/2 + np.arange(n_bins)*pixel_width
+            sig = np.clip(data, 0, None)
 
-            fig, ax = plt.subplots(figsize=(8,2))
+            ax.plot(coords, sig, lw=1.5)
+            ax.fill_between(coords, 0, sig, alpha=0.3)
 
-            sig = np.clip(data,0,None)
-
-            ax.plot(coords,sig,lw=1.5)
-            ax.fill_between(coords,0,sig,alpha=0.3)
-
-            ax.set_xlim(coords.min(),coords.max())
-
-            ax.set_xlabel("Genomic position (bp)")
-            ax.set_ylabel("Signal")
-
+            ax.set_xlim(coords.min(), coords.max())
             ax.set_title(mod)
 
             for spine in ax.spines.values():
@@ -370,10 +368,203 @@ def plot_epcot_predictions(prediction_file, save_dir="prediction_plots"):
         plt.tight_layout()
 
         plot_path = f"{save_dir}/{mod}_chr{chromosome}_{start}_{end}.png"
-
-        plt.savefig(plot_path,dpi=300)
+        plt.savefig(plot_path, dpi=300)
         plt.close()
 
         saved_plots.append(plot_path)
 
     return saved_plots
+
+def plot_all_modalities_stacked(pred_data, save_path):
+
+    chrom = pred_data["metadata"]["chromosome"]
+    start = pred_data["metadata"]["start"]
+    end   = pred_data["metadata"]["end"]
+    modalities = pred_data["metadata"]["modalities"]
+
+    tracks = []
+
+    # -----------------------------
+    # Collect valid 1D tracks
+    # -----------------------------
+    for mod in modalities:
+
+        if mod not in pred_data:
+            continue
+
+        if mod in ["microc", "hic", "intacthic"]:
+            continue
+
+        data = np.array(pred_data[mod])
+        data = np.squeeze(data)
+
+        if mod == "rna" and data.ndim == 2:
+            data = data[:, 2]
+
+        if mod in ["bru","rna_strand","tt","groseq","grocap","proseq","netcage"] and data.ndim == 2:
+            data = data[:, 0]
+
+        tracks.append((mod, data))
+
+    if len(tracks) == 0:
+        return None
+
+    # -----------------------------
+    # Create stacked plot
+    # -----------------------------
+    n_tracks = len(tracks)
+
+    fig, axes = plt.subplots(
+        n_tracks, 1,
+        figsize=(10, 1.5 * n_tracks),
+        sharex=False   # 🔥 important fix
+    )
+
+    if n_tracks == 1:
+        axes = [axes]
+
+    for i, (mod, data) in enumerate(tracks):
+
+        ax = axes[i]
+
+        # FIX: per-track coords
+        n_bins = data.shape[0]
+        pixel_width = (end - start) / n_bins
+        coords = start + pixel_width/2 + np.arange(n_bins) * pixel_width
+
+        sig = np.clip(data, 0, None)
+
+        ax.plot(coords, sig, lw=1)
+        ax.fill_between(coords, 0, sig, alpha=0.3)
+
+        ax.set_xlim(start, end)
+        ax.set_ylabel(mod, rotation=0, labelpad=30, fontsize=8)
+
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+        ax.tick_params(left=False)
+
+        if i != n_tracks - 1:
+            ax.tick_params(labelbottom=False)
+
+    axes[-1].set_xlabel(f"chr{chrom}: {start}-{end}")
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    plt.close()
+
+    return save_path
+
+def plot_all_modalities_2d(pred_data, save_path):
+
+    chrom = pred_data["metadata"]["chromosome"]
+    start = pred_data["metadata"]["start"]
+    end   = pred_data["metadata"]["end"]
+    modalities = pred_data["metadata"]["modalities"]
+
+    modalities_2d = ["microc", "hic", "intacthic"]
+
+    tracks_2d = [mod for mod in modalities_2d if mod in modalities and mod in pred_data]
+
+    if not tracks_2d:
+        return None
+
+    n = len(tracks_2d)
+    fig, axes = plt.subplots(1, n, figsize=(6 * n, 5))
+
+    if n == 1:
+        axes = [axes]
+
+    for ax, mod in zip(axes, tracks_2d):
+
+        data = np.array(pred_data[mod])
+        data = np.squeeze(data)
+
+        if mod == "microc":
+            mat = data[:, :, 0]
+        elif mod == "hic":
+            mat = data[:, :, 2]
+        elif mod == "intacthic":
+            mat = data[:, 1]
+
+        im = ax.imshow(
+            mat,
+            cmap="RdBu_r",
+            vmin=0,
+            vmax=2,
+            aspect="auto",
+            extent=[start, end, end, start]
+        )
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        plt.colorbar(im, cax=cax)
+
+        ax.set_title(mod)
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    plt.close()
+
+    return save_path
+
+def combine_json_to_pickle(output_dir="prediction_outputs", requested_modalities=None):
+    """
+    Combines all prediction JSON files in output_dir into a single pickle file.
+    Only includes modalities that were actually requested in the current session.
+    """
+    combined = {}
+    merged_modalities = []
+    last_metadata = None
+
+    for filename in os.listdir(output_dir):
+        if not filename.endswith(".json"):
+            continue
+
+        filepath = os.path.join(output_dir, filename)
+
+        with open(filepath, "r") as f:
+            data = json.load(f)
+
+        for mod in data["metadata"]["modalities"]:
+            if requested_modalities and mod not in requested_modalities:
+                continue
+            if mod in data:
+                combined[mod] = data[mod]
+                if mod not in merged_modalities:
+                    merged_modalities.append(mod)
+
+        last_metadata = data["metadata"]
+
+    if not combined:
+        print("[WARNING] No matching modalities found in", output_dir)
+        return None
+
+    # Rebuild clean metadata with only requested modalities
+    combined["metadata"] = {
+        "chromosome": last_metadata["chromosome"],
+        "start": last_metadata["start"],
+        "end": last_metadata["end"],
+        "modalities": merged_modalities,
+        "bam_file": last_metadata.get("bam_file", ""),
+        "timestamp": last_metadata.get("timestamp", "")
+    }
+
+    # Unique filename: modalities + region + timestamp
+    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    chrom = last_metadata["chromosome"]
+    start = last_metadata["start"]
+    end = last_metadata["end"]
+    mods_str = "_".join(merged_modalities)
+
+    pickle_filename = f"predictions_{mods_str}_chr{chrom}_{start}_{end}_{timestamp_str}.pkl"
+    pickle_path = os.path.join(output_dir, pickle_filename)
+
+    with open(pickle_path, "wb") as f:
+        pickle.dump(combined, f)
+
+    print(f"[INFO] Saved combined pickle to: {pickle_path}")
+    print(f"[INFO] Modalities included: {merged_modalities}")
+
+    return pickle_path
