@@ -1,89 +1,64 @@
-import sqlite3
 import os
 import json
 from datetime import datetime
+from dotenv import load_dotenv
+from supabase import create_client, Client
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "history.db")
+# Load environment variables
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    print("WARNING: Supabase URL or Key is missing. Make sure .env is populated.")
+
+# Initialize Supabase client globally
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS sessions (
-            session_id TEXT PRIMARY KEY,
-            title TEXT,
-            filename TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT,
-            role TEXT,
-            content TEXT,
-            is_action BOOLEAN,
-            visual_summary TEXT,
-            download_url TEXT,
-            plot_1d_url TEXT,
-            plot_2d_url TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(session_id) REFERENCES sessions(session_id)
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    # Supabase initialization happens in the cloud via the SQL setup script.
+    # No local creation logic needed here anymore.
+    pass
 
 def create_session(session_id: str, filename: str):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+    if not supabase: return
     title = f"Analysis of {filename}"
-    c.execute(
-        "INSERT INTO sessions (session_id, title, filename) VALUES (?, ?, ?)",
-        (session_id, title, filename)
-    )
-    conn.commit()
-    conn.close()
+    supabase.table("sessions").insert({
+        "session_id": session_id,
+        "title": title,
+        "filename": filename
+    }).execute()
 
 def add_message(session_id: str, role: str, content: str, is_action: bool = False, 
                 visual_summary: dict = None, download_url: str = None, 
                 plot_1d_url: str = None, plot_2d_url: str = None):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    vs_json = json.dumps(visual_summary) if visual_summary else None
-    c.execute('''
-        INSERT INTO messages 
-        (session_id, role, content, is_action, visual_summary, download_url, plot_1d_url, plot_2d_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (session_id, role, content, is_action, vs_json, download_url, plot_1d_url, plot_2d_url))
-    conn.commit()
-    conn.close()
+    if not supabase: return
+    
+    # We do NOT use json.dumps for visual_summary. 
+    # Supabase/Postgres natively accepts Python dicts for JSONB columns!
+    supabase.table("messages").insert({
+        "session_id": session_id,
+        "role": role,
+        "content": content,
+        "is_action": is_action,
+        "visual_summary": visual_summary,
+        "download_url": download_url,
+        "plot_1d_url": plot_1d_url,
+        "plot_2d_url": plot_2d_url
+    }).execute()
 
 def get_sessions():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT session_id, title, filename, created_at FROM sessions ORDER BY created_at DESC")
-    rows = c.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    if not supabase: return []
+    
+    response = supabase.table("sessions").select("*").order("created_at", desc=True).execute()
+    return response.data
 
 def get_session_messages(session_id: str):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
-    rows = c.fetchall()
-    conn.close()
+    if not supabase: return []
     
-    messages = []
-    for row in rows:
-        d = dict(row)
-        if d['visual_summary']:
-            d['visual_summary'] = json.loads(d['visual_summary'])
-        d['is_action'] = bool(d['is_action'])
-        messages.append(d)
-    return messages
+    response = supabase.table("messages").select("*").eq("session_id", session_id).order("id").execute()
+    return response.data
 
-# Initialize upon import
+# Dummy init to keep signature identical to sqlite driver
 init_db()
