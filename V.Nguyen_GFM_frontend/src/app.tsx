@@ -6,6 +6,7 @@ import { ThemeProvider } from "next-themes";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { MainLayout } from "./components/layout/MainLayout";
 import { NewAnalysis } from "./pages/new_analysis";
+import { JobHistory } from "./pages/job_history";
 
 
 const queryClient = new QueryClient();
@@ -21,6 +22,7 @@ const App = () => (
             <Route element={<MainLayout />}>
               <Route index element={<NewAnalysis />} />
               <Route path="analysis" element={<NewAnalysis />} />
+              <Route path="history" element={<JobHistory />} />
             </Route>
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           </Routes>

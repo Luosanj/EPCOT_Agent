@@ -12,8 +12,9 @@ import {
   Zap,
   MessageSquare,
   FlaskConical,
+  Download,
 } from "lucide-react";
-import { uploadBamFile, sendChatMessage } from "@/lib/api";
+import { uploadBamFile, sendChatMessage, API_BASE_URL } from "@/lib/api";
 import { toast } from "sonner";
 import { ResultsPanel, type JobMeta } from "@/components/ResultsPanel";
 
@@ -30,6 +31,9 @@ interface Message {
     low: number;
     total: number;
   };
+  downloadUrl?: string;
+  plot1dUrl?: string;
+  plot2dUrl?: string;
 }
 
 type Phase = "empty" | "chatting" | "results";
@@ -191,6 +195,28 @@ function MessageBubble({ msg }: { msg: Message }) {
             </div>
           </div>
         )}
+        {(msg.downloadUrl || msg.plot1dUrl || msg.plot2dUrl) && (
+          <div className="flex flex-col gap-3 mt-1 animate-in fade-in slide-in-from-bottom-2 w-full max-w-[400px]">
+            {msg.plot1dUrl && (
+              <a href={`${API_BASE_URL}${msg.plot1dUrl}`} target="_blank" rel="noopener noreferrer">
+                <img src={`${API_BASE_URL}${msg.plot1dUrl}`} alt="1D Plot Visualization" className="rounded-xl border border-border w-full object-contain bg-background/50 shadow-sm transition-transform hover:scale-[1.02]" />
+              </a>
+            )}
+            {msg.plot2dUrl && (
+              <a href={`${API_BASE_URL}${msg.plot2dUrl}`} target="_blank" rel="noopener noreferrer">
+                <img src={`${API_BASE_URL}${msg.plot2dUrl}`} alt="2D Plot Visualization" className="rounded-xl border border-border w-full object-contain bg-background/50 shadow-sm transition-transform hover:scale-[1.02]" />
+              </a>
+            )}
+            {msg.downloadUrl && (
+              <a href={`${API_BASE_URL}${msg.downloadUrl}`} download target="_blank" rel="noopener noreferrer" className="self-start">
+                <Button variant="outline" size="sm" className="h-8 gap-2 bg-card">
+                  <Download className="h-3.5 w-3.5" /> 
+                  Download Results
+                </Button>
+              </a>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -214,8 +240,48 @@ export function NewAnalysis() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
-  const addMessage = (role: Message["role"], content: string, isAction?: boolean, visualSummary?: Message["visualSummary"]) => {
-    setMessages((prev) => [...prev, { id: createId(), role, content, isAction, visualSummary }]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get("session_id");
+    if (sessionId) {
+      setIsLoading(true);
+      fetch(`${API_BASE_URL}/sessions/${sessionId}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.messages && data.messages.length > 0) {
+            setPhase("chatting");
+            setMessages(
+              data.messages.map((m: any) => ({
+                id: m.id.toString(),
+                role: m.role,
+                content: m.content,
+                isAction: m.is_action,
+                visualSummary: m.visual_summary,
+                downloadUrl: m.download_url,
+                plot1dUrl: m.plot_1d_url,
+                plot2dUrl: m.plot_2d_url,
+              }))
+            );
+          }
+        })
+        .catch((err) => console.error("Could not fetch session messages:", err))
+        .finally(() => setIsLoading(false));
+    }
+  }, []);
+
+  const addMessage = (
+    role: Message["role"],
+    content: string,
+    isAction?: boolean,
+    visualSummary?: Message["visualSummary"],
+    downloadUrl?: string,
+    plot1dUrl?: string,
+    plot2dUrl?: string
+  ) => {
+    setMessages((prev) => [
+      ...prev,
+      { id: createId(), role, content, isAction, visualSummary, downloadUrl, plot1dUrl, plot2dUrl },
+    ]);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -266,7 +332,15 @@ export function NewAnalysis() {
     setIsLoading(true);
     try {
       const response = await sendChatMessage(userText);
-      addMessage("agent", response?.reply ?? "I encountered an error returning a response.");
+      addMessage(
+        "agent",
+        response?.reply ?? "I encountered an error returning a response.",
+        false,
+        undefined,
+        response?.download_url,
+        response?.plot_1d_url,
+        response?.plot_2d_url
+      );
     } catch {
       addMessage("agent", "Sorry, I'm having trouble connecting to the backend.");
     } finally {

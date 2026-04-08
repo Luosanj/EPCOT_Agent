@@ -5,6 +5,12 @@ from pydantic import BaseModel
 from datetime import datetime
 import os
 from typing import List
+import uuid
+
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../V.Nguyen_GFM_backend')))
+from backend.database import create_session, add_message
+from backend.history_router import history_router
 
 from planner import LLMGenomicPlanner
 
@@ -37,6 +43,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(history_router)
+
 planner = LLMGenomicPlanner()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -60,7 +68,8 @@ state = {
     "modality": None,
     "selected_protocols": [],
     "disagreement_count": 0,
-    "combined_pickle": None
+    "combined_pickle": None,
+    "session_id": None
 }
 
 
@@ -82,6 +91,8 @@ async def upload_bam(file: UploadFile = File(...)):
     with open(file_path, "wb") as f:
         f.write(await file.read())
 
+    session_id = str(uuid.uuid4())
+
     state.update({
         "bam_file": file_path,
         "stage": "awaiting_region",
@@ -89,14 +100,19 @@ async def upload_bam(file: UploadFile = File(...)):
         "modality": None,
         "selected_protocols": [],
         "disagreement_count": 0,
-        "combined_pickle": None
+        "combined_pickle": None,
+        "session_id": session_id
     })
+
+    create_session(session_id, file.filename)
 
     assistant_reply = (
         f"{file.filename} uploaded successfully.\n"
         "Please provide genomic region:\n"
         "chr1, 100000, 200000"
     )
+
+    add_message(session_id, "agent", assistant_reply)
 
     log_conversation(
         user_message=f"Uploaded file: {file.filename}",
@@ -140,6 +156,9 @@ def chat(request: ChatRequest):
     if state["stage"] == "awaiting_modality" and not state.get("genomic_region"):
         return {"reply": "Please provide genomic region first."}
 
+    if state.get("session_id"):
+        add_message(state["session_id"], "user", request.message)
+
     # =============================
     # Call planner ONCE
     # =============================
@@ -175,6 +194,16 @@ def chat(request: ChatRequest):
                 response["plot_2d_url"] = f"/download_plot?path={plot_path}"
 
     log_conversation(request.message, reply, state)
+
+    if state.get("session_id"):
+        add_message(
+            state["session_id"],
+            "agent",
+            reply,
+            download_url=response.get("download_url"),
+            plot_1d_url=response.get("plot_1d_url"),
+            plot_2d_url=response.get("plot_2d_url")
+        )
 
     return response
 

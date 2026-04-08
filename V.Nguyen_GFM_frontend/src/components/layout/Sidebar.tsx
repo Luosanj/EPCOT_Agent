@@ -13,7 +13,6 @@ import {
 const navItems = [
   { to: "/", icon: FlaskConical, label: "New Analysis" },
   { to: "/history", icon: History, label: "Job History" },
-  { to: "/settings", icon: Settings, label: "Settings" },
 ];
 
 export function Sidebar() {
