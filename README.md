@@ -84,13 +84,21 @@ Make sure you have the following installed on your machine:
     VITE_API_BASE_URL=http://localhost:8000
     ```
     
-    **Backend** (set environment variables or create `backend/.env`):
+    **Backend** (set environment variables or create `.env` in project root):
     ```env
     VLLM_SERVER_URL=http://your-vllm-server:8000/v1
     VLLM_API_KEY=not-needed 
+    SUPABASE_URL=https://your_project.supabase.co
+    SUPABASE_KEY=your_anon_key
     ```
     
     See `.env.example` for more details.
+
+5.  **Install Supabase Addons:**
+    If your backend Conda environment requires the newly mapped Supabase packages, run the interactive installer from the root directory:
+    ```sh
+    ./A.Zheng_backend/install_supabase.sh
+    ```
 
 
 ### Running the Application
@@ -136,11 +144,12 @@ genomic_model_ai/
 │   └── ...
 ├── V.Nguyen_GFM_backend/         # Isolated Backend Services
 │   └── backend/
-│       ├── database.py           # SQLite persistence for chat sessions
+│       ├── database.py           # Supabase Postgres integration for chat sessions
 │       └── history_router.py     # FastAPI endpoints for historical jobs
 ├── A.Zheng_backend/              # Core Backend FastAPI application
 │   ├── server.py                 # FastAPI endpoints (/upload_bam, /chat)
 │   ├── planner.py                # State-tracking chat assistant
+│   ├── install_supabase.sh       # Bash wrapper installer for python-dotenv and supabase-py
 │   ├── EPCOT_runner.py           # PyTorch inference wrapper mapped to chromosomes
 │   └── environment.yml           # Conda dependencies
 └── README.md                     # This file
@@ -154,7 +163,7 @@ genomic_model_ai/
   
 - **`POST /chat`**: Follow-up chat interactions to configure genomic parameters.
   - Validates genomic regions (e.g. `chr1, 1000000, 2000000`).
-  - Records message exchanges to the SQLite history database.
+  - Records message exchanges securely to the Supabase Postgres database.
   - Prompts PyTorch/CUDA execution upon confirmation and serves back high-fidelity plot image paths alongside the chat.
 
 - **`GET /sessions`**: Administrative index route tracking all previously executed genomic analysis jobs to populate user dashboards.
