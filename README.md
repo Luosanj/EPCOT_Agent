@@ -8,11 +8,12 @@ The platform includes:
 
 -   **Dashboard Overview**: A central hub to view your research activity, including total runs, confidence scores, recent results, and active jobs.
 -   **New Analysis Runs**: Submit DNA sequences, FASTA files, or genomic regions for AI-powered predictions.
+-   **Inline Content & Visuals**: The chat interface natively parses backend responses to securely display output tracks (1D and 2D signal coverage maps) and CSV/Pickle data download buttons seamlessly inside the chat stream.
+-   **Job History**: A standalone page that queries past user sessions and automatically re-hydrates historical conversation threads, predictions, and plots so you never lose an analysis.
 -   **Detailed Results**: View prediction scores, confidence assessments, and evidence panels with links to external databases like UCSC and Ensembl.
 -   **Research Notebook**: A rich-text notebook to document research, embed result snapshots, and track version history for reproducibility.
 -   **AI Assistant**: An integrated chat interface powered by Qwen3 (via vLLM) that helps explain results, compare analyses, and guide users through the prediction system using backend-only capabilities.
 -   **LLM Request Queue**: The chat panel supports queued prompts. You can submit multiple messages while a response is running, and requests are processed in order.
--   **Training Prompt Shortcuts**: The chat panel includes one-click starter prompts based on current training examples (confidence, versions, job tracking, and workflow guidance).
 
 ## 🏛️ Architecture
 
@@ -128,11 +129,16 @@ genomic_model_ai/
 ├── V.Nguyen_GFM_frontend/        # Frontend React application
 │   ├── src/
 │   │   ├── pages/
-│   │   │   └── new_analysis.tsx  # Analysis submission overlay
+│   │   │   ├── new_analysis.tsx  # Analysis submission overlay
+│   │   │   └── job_history.tsx   # Past session reconstruction
 │   │   └── components/
 │   │       └── Chatbox.tsx       # AI interactive interface
 │   └── ...
-├── A.Zheng_backend/              # Backend FastAPI application
+├── V.Nguyen_GFM_backend/         # Isolated Backend Services
+│   └── backend/
+│       ├── database.py           # SQLite persistence for chat sessions
+│       └── history_router.py     # FastAPI endpoints for historical jobs
+├── A.Zheng_backend/              # Core Backend FastAPI application
 │   ├── server.py                 # FastAPI endpoints (/upload_bam, /chat)
 │   ├── planner.py                # State-tracking chat assistant
 │   ├── EPCOT_runner.py           # PyTorch inference wrapper mapped to chromosomes
@@ -144,12 +150,16 @@ genomic_model_ai/
 
 ### Core Features
 
-- **`POST /upload_bam`**: Endpoint handling multipart `.bam` file uploads. Persists file internally and returns a prompt acknowledging the file and requesting genomic regions.
+- **`POST /upload_bam`**: Endpoint handling multipart `.bam` file uploads. Persists file internally, generates a `session_id`, and returns a prompt requesting genomic regions.
   
 - **`POST /chat`**: Follow-up chat interactions to configure genomic parameters.
   - Validates genomic regions (e.g. `chr1, 1000000, 2000000`).
-  - Expects specific biology intent describing modalities (e.g., transcription activity, gene expression).
-  - Prompts PyTorch/CUDA execution upon confirmation and writes out high-fidelity output vectors.
+  - Records message exchanges to the SQLite history database.
+  - Prompts PyTorch/CUDA execution upon confirmation and serves back high-fidelity plot image paths alongside the chat.
+
+- **`GET /sessions`**: Administrative index route tracking all previously executed genomic analysis jobs to populate user dashboards.
+
+- **`GET /sessions/{session_id}`**: Retrieves an exact mapping of historical inputs, outputs, messages, and associated plot images to seamlessly jumpstart past chat conversations.
 
 ## 🎯 EPCOT Functionality
 
