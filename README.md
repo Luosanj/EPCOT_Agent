@@ -5,13 +5,10 @@ Welcome to the GFM Platform, an advanced web application designed for AI-powered
 ## ✨ Features
 
 The platform includes:
-
--   **Dashboard Overview**: A central hub to view your research activity, including total runs, confidence scores, recent results, and active jobs.
 -   **New Analysis Runs**: Submit DNA sequences, FASTA files, or genomic regions for AI-powered predictions.
 -   **Inline Content & Visuals**: The chat interface natively parses backend responses to securely display output tracks (1D and 2D signal coverage maps) and CSV/Pickle data download buttons seamlessly inside the chat stream.
 -   **Job History**: A standalone page that queries past user sessions and automatically re-hydrates historical conversation threads, predictions, and plots so you never lose an analysis.
 -   **Detailed Results**: View prediction scores, confidence assessments, and evidence panels with links to external databases like UCSC and Ensembl.
--   **Research Notebook**: A rich-text notebook to document research, embed result snapshots, and track version history for reproducibility.
 -   **AI Assistant**: An integrated chat interface powered by Qwen3 (via vLLM) that helps explain results, compare analyses, and guide users through the prediction system using backend-only capabilities.
 -   **LLM Request Queue**: The chat panel supports queued prompts. You can submit multiple messages while a response is running, and requests are processed in order.
 
