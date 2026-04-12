@@ -61,7 +61,7 @@ export function TopBar() {
             </Tooltip>
           </TooltipProvider>
           <Badge variant="secondary" className="font-mono text-xs">
-            EPCOT v1.0
+            EPCOT v2.0
           </Badge>
           <Avatar className="h-8 w-8">
             <AvatarImage src="" alt="User" />
